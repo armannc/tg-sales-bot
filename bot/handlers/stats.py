@@ -1,143 +1,129 @@
+Content is user-generated and unverified.
 """
-Хендлеры статистики: /stats, /employee, /day, /month, /year, /top, /export.
+Расчет зарплаты сотрудников: оклад + % от личных продаж за произвольный период.
+
+Премии/бонусы из отчетов (строка "Бонус") в зарплату не входят — считаются
+отдельно как разовая выплата.
 """
 from __future__ import annotations
 
-import datetime as dt
-import logging
-
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.database.engine import async_session_factory
-from bot.services.export_service import export_stats_to_excel
 from bot.services.employee_service import get_employee_by_name
-from bot.services.stats_service import (
-    EmployeeStats,
-    get_all_employee_stats,
-    get_period_bounds,
-    get_top_employees,
+from bot.services.stats_service import SalaryResult, calculate_salary, calculate_salary_for_all
+from bot.utils.dates import DateParseError, parse_date_arg
+from bot.utils.formatting import format_date, format_money
+from bot.utils.keyboards import back_to_menu_keyboard
+
+router = Router(name="salary")
+
+SALARY_USAGE = (
+    "💰 <b>Расчет зарплаты</b>\n\n"
+    "Формула: оклад за смену × отработанные смены + % от личных продаж.\n"
+    "Процент от продаж определяется автоматически по проценту выполнения "
+    "плана за период:\n"
+    "≤80% → 1%, 81-90% → 2%, 91-109% → 3%, ≥110% → 4%.\n"
+    "Премии из отчетов сюда не входят — считаются отдельно.\n\n"
+    "<b>Использование:</b>\n"
+    "/salary Имя ДД.ММ.ГГГГ ДД.ММ.ГГГГ — зарплата одного сотрудника\n"
+    "/salary_all ДД.ММ.ГГГГ ДД.ММ.ГГГГ — зарплата всех сотрудников\n\n"
+    "Например: /salary Алина 01.07.2026 31.07.2026\n\n"
+    "Оклад за смену задает администратор командой /set_salary."
 )
-from bot.utils.formatting import format_money, format_percent, medal_for_place
-
-logger = logging.getLogger(__name__)
-
-router = Router(name="stats")
 
 
-def _format_employee_block(place: int, stats: EmployeeStats) -> str:
+def _format_salary_block(result: SalaryResult) -> str:
     return (
-        f"{medal_for_place(place)} <b>{stats.employee.name}</b>\n\n"
-        f"Продажи\n{format_money(stats.total_sales)}\n\n"
-        f"Смен\n{stats.shifts}\n\n"
-        f"План\n{format_money(stats.plan)}\n\n"
-        f"Выполнение\n{format_percent(stats.percent)}\n\n"
-        f"Средняя касса\n{format_money(stats.avg_kassa)}\n"
-        "----------------------"
+        f"<b>{result.employee.name}</b>\n"
+        f"Смен отработано: {result.shifts}\n"
+        f"Личные продажи: {format_money(result.total_sales)}\n"
+        f"Выполнение плана: {result.plan_percent:.0f}%\n"
+        f"Оклад за смену: {format_money(result.shift_rate)} × {result.shifts} = "
+        f"{format_money(result.base_salary_total)}\n"
+        f"% от продаж ({result.sales_percent:g}%, по шкале плана): {format_money(result.sales_bonus)}\n"
+        f"<b>Итого: {format_money(result.total_salary)}</b>"
     )
 
 
-@router.message(Command("stats"))
-async def cmd_stats(message: Message) -> None:
-    async with async_session_factory() as session:
-        stats = await get_all_employee_stats(session)
-
-    if not stats:
-        await message.answer("Пока нет данных для статистики. Импортируйте хотя бы один отчет.")
-        return
-
-    stats.sort(key=lambda s: s.percent, reverse=True)
-    blocks = [_format_employee_block(i + 1, s) for i, s in enumerate(stats)]
-    await message.answer("\n\n".join(blocks))
-
-
-@router.message(Command("employee"))
-async def cmd_employee(message: Message, command: CommandObject) -> None:
+@router.message(Command("salary"))
+async def cmd_salary(message: Message, command: CommandObject) -> None:
     if not command.args:
-        await message.answer("Использование: /employee Имя")
+        await message.answer(SALARY_USAGE)
         return
 
-    name = command.args.strip()
+    parts = command.args.split()
+    if len(parts) != 3:
+        await message.answer(SALARY_USAGE)
+        return
+
+    name, date_from_raw, date_to_raw = parts
+    try:
+        date_from = parse_date_arg(date_from_raw)
+        date_to = parse_date_arg(date_to_raw)
+    except DateParseError as exc:
+        await message.answer(f"❌ {exc}")
+        return
+
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+
     async with async_session_factory() as session:
         employee = await get_employee_by_name(session, name)
         if employee is None:
             await message.answer(f"Сотрудник {name!r} не найден.")
             return
-
-        from bot.services.stats_service import get_employee_stats
-
-        stats = await get_employee_stats(session, employee)
+        result = await calculate_salary(session, employee, date_from, date_to)
 
     reply = (
-        f"<b>{employee.name}</b> ({employee.role.value})\n\n"
-        f"Продажи всего: {format_money(stats.total_sales)}\n"
-        f"Смен: {stats.shifts}\n"
-        f"План: {format_money(stats.plan)}\n"
-        f"Выполнение: {format_percent(stats.percent)}\n"
-        f"Средняя касса: {format_money(stats.avg_kassa)}\n"
-        f"Бонусы: {format_money(stats.total_bonus)}\n"
-        f"Дневной план (за смену): {format_money(employee.daily_plan)}"
+        f"💰 <b>Зарплата: {employee.name}</b>\n"
+        f"Период: {format_date(date_from)} — {format_date(date_to)}\n\n"
+        f"{_format_salary_block(result)}\n\n"
+        f"<i>Премии/бонусы из отчетов сюда не входят.</i>"
     )
     await message.answer(reply)
 
 
-async def _period_stats_reply(period: str, title: str) -> str:
-    date_from, date_to = await get_period_bounds(period)
-    async with async_session_factory() as session:
-        stats = await get_all_employee_stats(session, date_from, date_to)
-
-    if not stats:
-        return f"Нет данных за {title.lower()}."
-
-    stats.sort(key=lambda s: s.percent, reverse=True)
-    blocks = [_format_employee_block(i + 1, s) for i, s in enumerate(stats)]
-    header = f"📊 <b>Статистика: {title}</b>\n\n"
-    return header + "\n\n".join(blocks)
-
-
-@router.message(Command("day"))
-async def cmd_day(message: Message) -> None:
-    reply = await _period_stats_reply("day", "сегодня")
-    await message.answer(reply)
-
-
-@router.message(Command("month"))
-async def cmd_month(message: Message) -> None:
-    reply = await _period_stats_reply("month", "текущий месяц")
-    await message.answer(reply)
-
-
-@router.message(Command("year"))
-async def cmd_year(message: Message) -> None:
-    reply = await _period_stats_reply("year", "текущий год")
-    await message.answer(reply)
-
-
-@router.message(Command("top"))
-async def cmd_top(message: Message, command: CommandObject) -> None:
-    limit = 5
-    if command.args and command.args.strip().isdigit():
-        limit = int(command.args.strip())
-
-    async with async_session_factory() as session:
-        top = await get_top_employees(session, limit=limit)
-
-    if not top:
-        await message.answer("Нет данных для топа сотрудников.")
+@router.message(Command("salary_all"))
+async def cmd_salary_all(message: Message, command: CommandObject) -> None:
+    if not command.args or len(command.args.split()) != 2:
+        await message.answer(
+            "Использование: /salary_all ДД.ММ.ГГГГ ДД.ММ.ГГГГ\n"
+            "Например: /salary_all 01.07.2026 31.07.2026"
+        )
         return
 
-    blocks = [_format_employee_block(i + 1, s) for i, s in enumerate(top)]
-    await message.answer("🏆 <b>Топ сотрудников по выполнению плана</b>\n\n" + "\n\n".join(blocks))
+    date_from_raw, date_to_raw = command.args.split()
+    try:
+        date_from = parse_date_arg(date_from_raw)
+        date_to = parse_date_arg(date_to_raw)
+    except DateParseError as exc:
+        await message.answer(f"❌ {exc}")
+        return
 
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
 
-@router.message(Command("export"))
-async def cmd_export(message: Message) -> None:
     async with async_session_factory() as session:
-        file_path = await export_stats_to_excel(session)
+        results = await calculate_salary_for_all(session, date_from, date_to)
 
-    with open(file_path, "rb") as f:
-        data = f.read()
+    if not results:
+        await message.answer("Нет данных за указанный период.")
+        return
 
-    document = BufferedInputFile(data, filename=file_path.name)
-    await message.answer_document(document, caption="📥 Статистика по всем сотрудникам")
+    total_payout = sum(r.total_salary for r in results)
+    blocks = [_format_salary_block(r) for r in results]
+    header = (
+        f"💰 <b>Зарплата всех сотрудников</b>\n"
+        f"Период: {format_date(date_from)} — {format_date(date_to)}\n\n"
+    )
+    footer = f"\n\n<b>Итого фонд оплаты труда: {format_money(total_payout)}</b>"
+    await message.answer(header + "\n\n----------------------\n\n".join(blocks) + footer)
+
+
+@router.callback_query(F.data == "menu:salary")
+async def cb_salary_help(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(SALARY_USAGE, reply_markup=back_to_menu_keyboard())
+    await callback.answer()

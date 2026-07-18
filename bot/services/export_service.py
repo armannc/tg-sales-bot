@@ -1,3 +1,5 @@
+Content is user-generated and unverified.
+1
 """
 Сервис экспорта статистики в Excel (.xlsx) с помощью pandas + openpyxl.
 """
@@ -9,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.services.salary_tiers import get_sales_percent_by_plan
 from bot.services.stats_service import get_all_employee_stats
 
 EXPORT_DIR = Path(__file__).resolve().parent.parent.parent / "exports"
@@ -25,6 +28,10 @@ async def export_stats_to_excel(
 
     rows = []
     for s in stats:
+        sales_percent = get_sales_percent_by_plan(s.percent)
+        sales_bonus = s.total_sales * sales_percent / 100
+        base_salary_total = s.employee.base_salary * s.shifts
+        salary_total = base_salary_total + sales_bonus
         rows.append(
             {
                 "Сотрудник": s.employee.name,
@@ -34,7 +41,11 @@ async def export_stats_to_excel(
                 "План": round(s.plan),
                 "Выполнение, %": round(s.percent, 1),
                 "Средняя касса": round(s.avg_kassa),
-                "Бонусы": round(s.total_bonus),
+                "Бонусы (из отчетов)": round(s.total_bonus),
+                "Оклад за смену": round(s.employee.base_salary),
+                "Оклад за период": round(base_salary_total),
+                "% от продаж (по шкале плана)": sales_percent,
+                "Зарплата": round(salary_total),
             }
         )
 

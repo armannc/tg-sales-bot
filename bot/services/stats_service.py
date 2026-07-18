@@ -1,3 +1,4 @@
+Content is user-generated and unverified.
 """
 Сервис расчета статистики: агрегация продаж/планов по сотрудникам за период.
 """
@@ -10,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.database.models import DailyReport, Employee, EmployeeReport
+from bot.services.salary_tiers import get_sales_percent_by_plan
 
 
 @dataclass(slots=True)
@@ -108,7 +110,71 @@ async def get_top_employees(
     return all_stats[:limit]
 
 
-async def get_daily_report_by_date(session: AsyncSession, date_: dt.date) -> DailyReport | None:
+@dataclass(slots=True)
+class SalaryResult:
+    employee: Employee
+    date_from: dt.date
+    date_to: dt.date
+    total_sales: float
+    shifts: int
+    shift_rate: float
+    base_salary_total: float
+    plan_percent: float
+    sales_percent: float
+    sales_bonus: float
+    total_salary: float
+
+
+async def calculate_salary(
+    session: AsyncSession,
+    employee: Employee,
+    date_from: dt.date,
+    date_to: dt.date,
+) -> SalaryResult:
+    """Считает зарплату сотрудника за период: оклад за смену × смены + % от продаж.
+
+    Оклад начисляется за каждую отработанную смену (как и план), а не
+    фиксированной суммой за весь период. Процент от продаж определяется
+    автоматически по шкале выполнения плана (см.
+    bot/services/salary_tiers.py). Премии/бонусы из отчетов (строка
+    "Бонус") в расчет не входят — это отдельная выплата.
+    """
+    stats = await get_employee_stats(session, employee, date_from, date_to)
+    sales_percent = get_sales_percent_by_plan(stats.percent)
+    sales_bonus = stats.total_sales * sales_percent / 100
+    base_salary_total = employee.base_salary * stats.shifts
+    total_salary = base_salary_total + sales_bonus
+
+    return SalaryResult(
+        employee=employee,
+        date_from=date_from,
+        date_to=date_to,
+        total_sales=stats.total_sales,
+        shifts=stats.shifts,
+        shift_rate=employee.base_salary,
+        base_salary_total=base_salary_total,
+        plan_percent=stats.percent,
+        sales_percent=sales_percent,
+        sales_bonus=sales_bonus,
+        total_salary=total_salary,
+    )
+
+
+async def calculate_salary_for_all(
+    session: AsyncSession,
+    date_from: dt.date,
+    date_to: dt.date,
+    only_active: bool = True,
+) -> list[SalaryResult]:
+    from bot.services.employee_service import list_employees
+
+    employees = await list_employees(session, only_active=only_active)
+    results: list[SalaryResult] = []
+    for employee in employees:
+        result = await calculate_salary(session, employee, date_from, date_to)
+        if result.shifts > 0:
+            results.append(result)
+    return results
     result = await session.execute(select(DailyReport).where(DailyReport.report_date == date_))
     return result.scalar_one_or_none()
 
