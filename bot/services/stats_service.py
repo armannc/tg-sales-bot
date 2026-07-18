@@ -1,4 +1,4 @@
-Content is user-generated and unverified.
+#Content is user-generated and unverified.
 """
 Сервис расчета статистики: агрегация продаж/планов по сотрудникам за период.
 """

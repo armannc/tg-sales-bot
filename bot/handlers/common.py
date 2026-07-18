@@ -1,4 +1,4 @@
-Content is user-generated and unverified.
+#Content is user-generated and unverified.
 """
 Базовые команды: /start, /help, а также обработка главного меню (inline-кнопки).
 """

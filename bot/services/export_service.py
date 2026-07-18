@@ -1,4 +1,4 @@
-Content is user-generated and unverified.
+#Content is user-generated and unverified.
 1
 """
 Сервис экспорта статистики в Excel (.xlsx) с помощью pandas + openpyxl.

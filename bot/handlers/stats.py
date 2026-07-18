@@ -1,4 +1,4 @@
-Content is user-generated and unverified.
+#Content is user-generated and unverified.
 """
 Расчет зарплаты сотрудников: оклад + % от личных продаж за произвольный период.
 
