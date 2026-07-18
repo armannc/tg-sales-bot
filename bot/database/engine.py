@@ -12,7 +12,23 @@ from bot.database.models import Base
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(config.database_url, echo=False, future=True)
+# asyncpg (используется для PostgreSQL/Supabase) не читает "?sslmode=require"
+# из URL так же, как psycopg2 - SSL нужно включить явно через connect_args.
+# Для SQLite этот параметр не нужен и не передается.
+_connect_args: dict = {}
+if config.database_url.startswith("postgresql"):
+    _connect_args["ssl"] = "require"
+
+engine = create_async_engine(
+    config.database_url,
+    echo=False,
+    future=True,
+    connect_args=_connect_args,
+    pool_pre_ping=True,   # проверяет соединение перед использованием - избегает зависаний
+                           # на "протухших" соединениях через пулер Supabase
+    pool_recycle=300,     # пересоздает соединения старше 5 минут (пулеры часто
+                           # сами закрывают долго простаивающие соединения)
+)
 
 async_session_factory = async_sessionmaker(
     bind=engine,
