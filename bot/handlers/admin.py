@@ -1,5 +1,5 @@
 """
-Админ-команды: /add_employee, /remove_employee, /set_role, /set_plan.
+Админ-команды: /add_employee, /remove_employee, /set_role, /set_plan, /set_salary.
 
 /add_employee поддерживает два варианта использования:
   1) Короткая форма одной строкой:
@@ -21,6 +21,8 @@ from bot.services.employee_service import (
     EmployeeServiceError,
     add_employee,
     remove_employee,
+    set_base_salary_for_employee,
+    set_base_salary_for_role,
     set_employee_role,
     set_plan_for_employee,
     set_plan_for_role,
@@ -210,3 +212,44 @@ async def cmd_set_plan(message: Message, command: CommandObject) -> None:
             return
 
     await message.answer(f"✅ План сотрудника {target} установлен: {format_money(plan)}.")
+
+
+@router.message(Command("set_salary"))
+async def cmd_set_salary(message: Message, command: CommandObject) -> None:
+    if not await _require_admin(message):
+        return
+
+    if not command.args or len(command.args.split()) != 2:
+        await message.answer(
+            "Использование:\n"
+            "/set_salary consultant 5000  — оклад за смену для всей роли\n"
+            "/set_salary online 4000  — оклад за смену для всей роли\n"
+            "/set_salary Иван 5000  — оклад за смену для конкретного сотрудника\n\n"
+            "% от продаж считается автоматически по шкале выполнения плана."
+        )
+        return
+
+    target, salary_raw = command.args.split()
+    try:
+        base_salary = float(salary_raw)
+    except ValueError:
+        await message.answer("❌ Оклад должен быть числом.")
+        return
+
+    async with async_session_factory() as session:
+        if target.lower() in (RoleEnum.consultant.value, RoleEnum.online.value):
+            role = RoleEnum(target.lower())
+            updated_count = await set_base_salary_for_role(session, role, base_salary)
+            await message.answer(
+                f"✅ Оклад за смену для роли {role.value} установлен: {format_money(base_salary)} "
+                f"(обновлено сотрудников: {updated_count})."
+            )
+            return
+
+        try:
+            await set_base_salary_for_employee(session, target, base_salary)
+        except EmployeeServiceError as exc:
+            await message.answer(f"❌ {exc}")
+            return
+
+    await message.answer(f"✅ Оклад за смену сотрудника {target} установлен: {format_money(base_salary)}.")

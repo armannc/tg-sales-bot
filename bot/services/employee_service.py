@@ -71,6 +71,33 @@ async def set_plan_for_employee(session: AsyncSession, name: str, daily_plan: fl
     return employee
 
 
+async def set_base_salary_for_role(
+    session: AsyncSession, role: RoleEnum, base_salary: float
+) -> int:
+    """Устанавливает оклад за смену для всех сотрудников с указанной ролью.
+
+    Returns:
+        Количество обновленных сотрудников.
+    """
+    result = await session.execute(select(Employee).where(Employee.role == role))
+    employees = result.scalars().all()
+    for employee in employees:
+        employee.base_salary = base_salary
+    await session.commit()
+    return len(employees)
+
+
+async def set_base_salary_for_employee(
+    session: AsyncSession, name: str, base_salary: float
+) -> Employee:
+    employee = await get_employee_by_name(session, name)
+    if employee is None:
+        raise EmployeeServiceError(f"Сотрудник {name!r} не найден.")
+    employee.base_salary = base_salary
+    await session.commit()
+    return employee
+
+
 async def list_employees(session: AsyncSession, only_active: bool = True) -> list[Employee]:
     query = select(Employee)
     if only_active:
