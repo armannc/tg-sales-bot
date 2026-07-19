@@ -38,6 +38,7 @@ class Employee(Base):
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     role: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), nullable=False, default=RoleEnum.consultant)
     daily_plan: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    base_salary: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     shifts_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
