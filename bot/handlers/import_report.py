@@ -60,12 +60,21 @@ async def process_report_text(message: Message, state: FSMContext) -> None:
             await message.answer("❌ Произошла непредвиденная ошибка при импорте отчета.")
             return
 
-    employees_count = len(daily_report.employee_reports)
+        # ВАЖНО: обращаемся к daily_report.employee_reports, пока сессия еще
+        # открыта (мы внутри "async with"). После выхода из блока сессия
+        # закрывается, и любое обращение к отложенно загружаемым атрибутам
+        # объекта привело бы к DetachedInstanceError.
+        employees_count = len(daily_report.employee_reports)
+        report_date = daily_report.report_date
+        total_revenue = daily_report.total_revenue
+        online_sales = daily_report.online_sales
+        conversion = daily_report.conversion
+
     reply = (
-        f"✅ Отчет за {format_date(daily_report.report_date)} успешно импортирован.\n\n"
-        f"Выручка (Вообщем): {format_money(daily_report.total_revenue)}\n"
-        f"Онлайн продажи: {format_money(daily_report.online_sales)}\n"
-        f"Конверсия: {format_percent(daily_report.conversion)}\n"
+        f"✅ Отчет за {format_date(report_date)} успешно импортирован.\n\n"
+        f"Выручка (Вообщем): {format_money(total_revenue)}\n"
+        f"Онлайн продажи: {format_money(online_sales)}\n"
+        f"Конверсия: {format_percent(conversion)}\n"
         f"Сотрудников в смене: {employees_count}"
     )
     await message.answer(reply)

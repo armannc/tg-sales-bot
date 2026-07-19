@@ -8,6 +8,7 @@ import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from bot.config import config
 from bot.database.models import DailyReport, Employee, EmployeeReport, RoleEnum
@@ -43,7 +44,9 @@ async def _get_or_create_employee(
 
 async def _delete_existing_report_for_date(session: AsyncSession, parsed: ParsedReport) -> None:
     result = await session.execute(
-        select(DailyReport).where(DailyReport.report_date == parsed.report_date)
+        select(DailyReport)
+        .options(selectinload(DailyReport.employee_reports))
+        .where(DailyReport.report_date == parsed.report_date)
     )
     existing = result.scalar_one_or_none()
     if existing is None:
@@ -133,5 +136,13 @@ async def import_report_text(session: AsyncSession, text: str) -> DailyReport:
         session.add(employee_report)
 
     await session.commit()
+
+    # После commit() SQLAlchemy по умолчанию "протухает" (expire) все атрибуты
+    # объекта, включая relationship-и. Явно подгружаем employee_reports,
+    # пока сессия еще активна, чтобы вызывающий код мог безопасно прочитать
+    # daily_report.employee_reports (иначе - DetachedInstanceError, если это
+    # произойдет уже после закрытия сессии).
+    await session.refresh(daily_report, attribute_names=["employee_reports"])
+
     logger.info("Отчет за %s успешно импортирован", parsed.report_date)
     return daily_report
