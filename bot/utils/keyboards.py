@@ -37,3 +37,16 @@ def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="menu:root"))
     return builder.as_markup()
+def employee_menu_keyboard() -> InlineKeyboardMarkup:
+    """Меню для обычного сотрудника — только его личные данные."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📊 Моя статистика", callback_data="me:stats"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="💰 Моя зарплата за месяц", callback_data="me:salary_month"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help"),
+    )
+    return builder.as_markup()

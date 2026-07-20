@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from bot.database.engine import async_session_factory
 from bot.handlers.states import ImportStates
-from bot.utils.keyboards import back_to_menu_keyboard, main_menu_keyboard
+from bot.services.invite_service import use_invite_code, InviteError
+from bot.utils.access import is_admin
+from bot.utils.keyboards import back_to_menu_keyboard, main_menu_keyboard, employee_menu_keyboard
 
 router = Router(name="common")
 
@@ -36,24 +39,51 @@ HELP_TEXT = (
     "Также доступно меню с кнопками — отправьте /menu."
 )
 
+EMPLOYEE_HELP_TEXT = (
+    "🤖 <b>Бот учета продаж</b>\n\n"
+    "<b>Доступные команды:</b>\n"
+    "/me — краткая информация о себе\n"
+    "/my_stats — моя статистика\n"
+    "/my_salary ДД.ММ.ГГГГ ДД.ММ.ГГГГ — моя зарплата за период\n\n"
+    "Также доступно меню с кнопками — отправьте /menu."
+)
+
+
+def _menu_for(user_id: int):
+    return main_menu_keyboard() if is_admin(user_id) else employee_menu_keyboard()
+
+
+def _help_for(user_id: int) -> str:
+    return HELP_TEXT if is_admin(user_id) else EMPLOYEE_HELP_TEXT
+
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, command: CommandObject) -> None:
+    code = command.args  # значение после ?start=<code>
+
+    if code:
+        async with async_session_factory() as session:
+            try:
+                employee = await use_invite_code(session, code, message.from_user.id)
+                await message.answer(f"Готово! Вы привязаны как <b>{employee.name}</b>.")
+            except InviteError as e:
+                await message.answer(f"⚠️ {e}")
+
     await message.answer(
         "Привет! Я бот для учета продаж сотрудников магазина.\n\n"
         "Выберите действие ниже или отправьте /help, чтобы увидеть список команд.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=_menu_for(message.from_user.id),
     )
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(HELP_TEXT, reply_markup=main_menu_keyboard())
+    await message.answer(_help_for(message.from_user.id), reply_markup=_menu_for(message.from_user.id))
 
 
 @router.message(Command("menu"))
 async def cmd_menu(message: Message) -> None:
-    await message.answer("Главное меню:", reply_markup=main_menu_keyboard())
+    await message.answer("Главное меню:", reply_markup=_menu_for(message.from_user.id))
 
 
 # ------------------------------------------------------------------
@@ -62,13 +92,13 @@ async def cmd_menu(message: Message) -> None:
 
 @router.callback_query(F.data == "menu:root")
 async def cb_menu_root(callback: CallbackQuery) -> None:
-    await callback.message.edit_text("Главное меню:", reply_markup=main_menu_keyboard())
+    await callback.message.edit_text("Главное меню:", reply_markup=_menu_for(callback.from_user.id))
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:help")
 async def cb_menu_help(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(HELP_TEXT, reply_markup=back_to_menu_keyboard())
+    await callback.message.edit_text(_help_for(callback.from_user.id), reply_markup=back_to_menu_keyboard())
     await callback.answer()
 
 
