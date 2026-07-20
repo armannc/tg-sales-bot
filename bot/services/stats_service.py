@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from bot.database.models import DailyReport, Employee, EmployeeReport
 from bot.services.salary_tiers import get_sales_percent_by_plan
@@ -174,6 +175,9 @@ async def calculate_salary_for_all(
         if result.shifts > 0:
             results.append(result)
     return results
+
+
+async def get_daily_report_by_date(session: AsyncSession, date_: dt.date) -> DailyReport | None:
     result = await session.execute(select(DailyReport).where(DailyReport.report_date == date_))
     return result.scalar_one_or_none()
 
@@ -187,3 +191,41 @@ async def get_daily_reports_between(
         .order_by(DailyReport.report_date)
     )
     return list(result.scalars().all())
+
+
+async def get_employee_reports_for_daily_report(
+    session: AsyncSession, daily_report_id: int
+) -> list[EmployeeReport]:
+    """Все строки (по сотрудникам) конкретного дневного отчета, с подгруженным Employee."""
+    result = await session.execute(
+        select(EmployeeReport)
+        .options(joinedload(EmployeeReport.employee))
+        .where(EmployeeReport.daily_report_id == daily_report_id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_employee_best_sales_excluding(
+    session: AsyncSession, employee_id: int, daily_report_id: int
+) -> float:
+    """Лучший результат по кассе сотрудника за всё время, не считая указанный отчет."""
+    result = await session.execute(
+        select(func.coalesce(func.max(EmployeeReport.sales), 0.0)).where(
+            EmployeeReport.employee_id == employee_id,
+            EmployeeReport.daily_report_id != daily_report_id,
+        )
+    )
+    return result.scalar_one()
+
+
+async def get_previous_daily_report(
+    session: AsyncSession, before_date: dt.date
+) -> DailyReport | None:
+    """Последний отчет с датой строго раньше before_date (для сравнения "с прошлым днем")."""
+    result = await session.execute(
+        select(DailyReport)
+        .where(DailyReport.report_date < before_date)
+        .order_by(DailyReport.report_date.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
