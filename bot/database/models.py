@@ -7,6 +7,7 @@ import datetime as dt
 import enum
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -41,7 +42,7 @@ class Employee(Base):
     base_salary: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     shifts_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    telegram_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     reports: Mapped[list["EmployeeReport"]] = relationship(
@@ -113,7 +114,7 @@ class InviteCode(Base):
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
     used_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
-    used_by_telegram_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    used_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     employee: Mapped["Employee"] = relationship(back_populates="invite_codes")
