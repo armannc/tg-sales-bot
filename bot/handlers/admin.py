@@ -20,6 +20,7 @@ from bot.handlers.states import AddEmployeeStates
 from bot.services.employee_service import (
     EmployeeServiceError,
     add_employee,
+    get_employee_by_name,
     remove_employee,
     set_employee_role,
     set_plan_for_employee,
@@ -27,6 +28,7 @@ from bot.services.employee_service import (
     set_salary_for_employee,
     set_salary_for_role,
 )
+from bot.services.invite_service import create_invite_code
 from bot.utils.access import is_admin
 from bot.utils.formatting import format_money
 
@@ -257,3 +259,48 @@ async def cmd_set_salary(message: Message, command: CommandObject) -> None:
             return
 
     await message.answer(f"✅ Для {target} установлен оклад за смену {format_money(base_salary)}.")
+
+
+@router.message(Command("invite"))
+async def cmd_invite(message: Message, command: CommandObject) -> None:
+    """Создает одноразовую ссылку-приглашение для личного кабинета сотрудника.
+
+    Сотрудник переходит по ней -> его Telegram-аккаунт привязывается к
+    записи в базе -> становится доступен /me, /my_stats, /my_salary.
+    """
+    if not await _require_admin(message):
+        return
+
+    if not command.args:
+        await message.answer(
+            "Использование: /invite Имя\n"
+            "Например: /invite Алина\n\n"
+            "Сотрудник должен быть уже добавлен через /add_employee."
+        )
+        return
+
+    name = command.args.strip()
+
+    async with async_session_factory() as session:
+        employee = await get_employee_by_name(session, name)
+        if employee is None:
+            await message.answer(f"Сотрудник {name!r} не найден. Сначала добавьте его через /add_employee.")
+            return
+        if employee.telegram_id is not None:
+            await message.answer(
+                f"У сотрудника {employee.name} уже привязан Telegram-аккаунт. "
+                "Повторное приглашение не требуется."
+            )
+            return
+
+        code = await create_invite_code(session, employee)
+
+    bot_info = await message.bot.get_me()
+    link = f"https://t.me/{bot_info.username}?start={code}"
+
+    await message.answer(
+        f"✅ Ссылка-приглашение для {employee.name} готова:\n\n"
+        f"{link}\n\n"
+        "Отправьте её сотруднику — она одноразовая и работает только для "
+        "того, кто перейдет по ней первым."
+    )
