@@ -1,5 +1,5 @@
 """
-Админ-команды: /add_employee, /remove_employee, /set_role, /set_plan, /set_salary.
+Админ-команды: /add_employee, /remove_employee, /set_role, /set_plan.
 
 /add_employee поддерживает два варианта использования:
   1) Короткая форма одной строкой:
@@ -21,11 +21,11 @@ from bot.services.employee_service import (
     EmployeeServiceError,
     add_employee,
     remove_employee,
-    set_base_salary_for_employee,
-    set_base_salary_for_role,
     set_employee_role,
     set_plan_for_employee,
     set_plan_for_role,
+    set_salary_for_employee,
+    set_salary_for_role,
 )
 from bot.utils.access import is_admin
 from bot.utils.formatting import format_money
@@ -222,10 +222,14 @@ async def cmd_set_salary(message: Message, command: CommandObject) -> None:
     if not command.args or len(command.args.split()) != 2:
         await message.answer(
             "Использование:\n"
-            "/set_salary consultant 5000  — оклад за смену для всей роли\n"
-            "/set_salary online 4000  — оклад за смену для всей роли\n"
-            "/set_salary Иван 5000  — оклад за смену для конкретного сотрудника\n\n"
-            "% от продаж считается автоматически по шкале выполнения плана."
+            "/set_salary Имя оклад_за_смену — для конкретного сотрудника\n"
+            "/set_salary consultant оклад_за_смену — для всей роли\n"
+            "/set_salary online оклад_за_смену — для всей роли\n\n"
+            "Например: /set_salary Алина 6666\n"
+            "(6666 тг начисляется за каждую отработанную смену)\n\n"
+            "Процент от продаж задавать не нужно — он считается автоматически "
+            "по проценту выполнения плана за период:\n"
+            "≤80% плана → 1%, 81-90% → 2%, 91-109% → 3%, ≥110% → 4%."
         )
         return
 
@@ -239,17 +243,17 @@ async def cmd_set_salary(message: Message, command: CommandObject) -> None:
     async with async_session_factory() as session:
         if target.lower() in (RoleEnum.consultant.value, RoleEnum.online.value):
             role = RoleEnum(target.lower())
-            updated_count = await set_base_salary_for_role(session, role, base_salary)
+            updated_count = await set_salary_for_role(session, role, base_salary)
             await message.answer(
-                f"✅ Оклад за смену для роли {role.value} установлен: {format_money(base_salary)} "
+                f"✅ Для роли {role.value} установлен оклад за смену {format_money(base_salary)} "
                 f"(обновлено сотрудников: {updated_count})."
             )
             return
 
         try:
-            await set_base_salary_for_employee(session, target, base_salary)
+            await set_salary_for_employee(session, target, base_salary)
         except EmployeeServiceError as exc:
             await message.answer(f"❌ {exc}")
             return
 
-    await message.answer(f"✅ Оклад за смену сотрудника {target} установлен: {format_money(base_salary)}.")
+    await message.answer(f"✅ Для {target} установлен оклад за смену {format_money(base_salary)}.")

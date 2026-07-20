@@ -1,6 +1,5 @@
 """
-Базовые команды: /start, /help, а также обработка главного меню (inline-кнопки)
-и постоянной reply-кнопки меню рядом с полем ввода.
+Базовые команды: /start, /help, а также обработка главного меню (inline-кнопки).
 """
 from __future__ import annotations
 
@@ -10,12 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.handlers.states import ImportStates
-from bot.utils.keyboards import (
-    MENU_BUTTON_TEXT,
-    back_to_menu_keyboard,
-    main_menu_keyboard,
-    persistent_menu_keyboard,
-)
+from bot.utils.keyboards import back_to_menu_keyboard, main_menu_keyboard
 
 router = Router(name="common")
 
@@ -39,21 +33,17 @@ HELP_TEXT = (
     "/set_role &lt;имя&gt; &lt;consultant|online&gt; — изменить роль\n"
     "/set_plan &lt;consultant|online|имя&gt; &lt;сумма&gt; — изменить план\n"
     "/set_salary &lt;имя|consultant|online&gt; &lt;оклад_за_смену&gt; — оклад за смену (% от продаж — автоматически)\n\n"
-    "Также доступно меню с кнопками — отправьте /menu или нажмите "
-    f"«{MENU_BUTTON_TEXT}» рядом с полем ввода."
+    "Также доступно меню с кнопками — отправьте /menu."
 )
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    # Сначала показываем постоянную reply-кнопку меню рядом с полем ввода...
     await message.answer(
         "Привет! Я бот для учета продаж сотрудников магазина.\n\n"
         "Выберите действие ниже или отправьте /help, чтобы увидеть список команд.",
-        reply_markup=persistent_menu_keyboard(),
+        reply_markup=main_menu_keyboard(),
     )
-    # ...а затем отдельным сообщением - inline-меню с разделами.
-    await message.answer("Главное меню:", reply_markup=main_menu_keyboard())
 
 
 @router.message(Command("help"))
@@ -63,12 +53,6 @@ async def cmd_help(message: Message) -> None:
 
 @router.message(Command("menu"))
 async def cmd_menu(message: Message) -> None:
-    await message.answer("Главное меню:", reply_markup=main_menu_keyboard())
-
-
-@router.message(F.text == MENU_BUTTON_TEXT)
-async def handle_menu_button(message: Message) -> None:
-    """Обработка нажатия постоянной reply-кнопки меню."""
     await message.answer("Главное меню:", reply_markup=main_menu_keyboard())
 
 

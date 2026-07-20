@@ -1,3 +1,4 @@
+
 """
 Сервис управления сотрудниками (используется админ-командами).
 """
@@ -15,6 +16,12 @@ class EmployeeServiceError(Exception):
 
 async def get_employee_by_name(session: AsyncSession, name: str) -> Employee | None:
     result = await session.execute(select(Employee).where(Employee.name.ilike(name)))
+    return result.scalar_one_or_none()
+
+
+async def get_employee_by_telegram_id(session: AsyncSession, telegram_id: int) -> Employee | None:
+    """Находит сотрудника по привязанному Telegram-аккаунту (после /invite)."""
+    result = await session.execute(select(Employee).where(Employee.telegram_id == telegram_id))
     return result.scalar_one_or_none()
 
 
@@ -71,10 +78,21 @@ async def set_plan_for_employee(session: AsyncSession, name: str, daily_plan: fl
     return employee
 
 
-async def set_base_salary_for_role(
-    session: AsyncSession, role: RoleEnum, base_salary: float
-) -> int:
-    """Устанавливает оклад за смену для всех сотрудников с указанной ролью.
+async def set_salary_for_employee(session: AsyncSession, name: str, base_salary: float) -> Employee:
+    employee = await get_employee_by_name(session, name)
+    if employee is None:
+        raise EmployeeServiceError(f"Сотрудник {name!r} не найден.")
+    employee.base_salary = base_salary
+    await session.commit()
+    return employee
+
+
+async def set_salary_for_role(session: AsyncSession, role: RoleEnum, base_salary: float) -> int:
+    """Устанавливает оклад для всех сотрудников с указанной ролью.
+
+    Процент от продаж в оклад не входит — он считается автоматически по
+    шкале выполнения плана (см. bot/services/salary_tiers.py) и не
+    настраивается вручную.
 
     Returns:
         Количество обновленных сотрудников.
@@ -85,17 +103,6 @@ async def set_base_salary_for_role(
         employee.base_salary = base_salary
     await session.commit()
     return len(employees)
-
-
-async def set_base_salary_for_employee(
-    session: AsyncSession, name: str, base_salary: float
-) -> Employee:
-    employee = await get_employee_by_name(session, name)
-    if employee is None:
-        raise EmployeeServiceError(f"Сотрудник {name!r} не найден.")
-    employee.base_salary = base_salary
-    await session.commit()
-    return employee
 
 
 async def list_employees(session: AsyncSession, only_active: bool = True) -> list[Employee]:
