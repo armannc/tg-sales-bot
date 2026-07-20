@@ -174,6 +174,8 @@ async def calculate_salary_for_all(
         if result.shifts > 0:
             results.append(result)
     return results
+    result = await session.execute(select(DailyReport).where(DailyReport.report_date == date_))
+    return result.scalar_one_or_none()
 
 
 async def get_daily_reports_between(

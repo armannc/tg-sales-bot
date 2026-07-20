@@ -12,6 +12,7 @@ from aiogram.types import Message
 
 from bot.database.engine import async_session_factory
 from bot.handlers.states import ImportStates
+from bot.services.notifications import build_import_notifications, build_previous_day_comparison
 from bot.services.report_service import ReportImportError, import_report_text
 from bot.services.parser import ReportParseError
 from bot.utils.access import is_admin
@@ -60,24 +61,25 @@ async def process_report_text(message: Message, state: FSMContext) -> None:
             await message.answer("❌ Произошла непредвиденная ошибка при импорте отчета.")
             return
 
-        # ВАЖНО: обращаемся к daily_report.employee_reports, пока сессия еще
-        # открыта (мы внутри "async with"). После выхода из блока сессия
-        # закрывается, и любое обращение к отложенно загружаемым атрибутам
-        # объекта привело бы к DetachedInstanceError.
-        employees_count = len(daily_report.employee_reports)
-        report_date = daily_report.report_date
-        total_revenue = daily_report.total_revenue
-        online_sales = daily_report.online_sales
-        conversion = daily_report.conversion
+        # Собираем сравнение и уведомления в той же сессии, пока данные свежие
+        comparison_text = await build_previous_day_comparison(session, daily_report)
+        notification_lines = await build_import_notifications(session, daily_report)
 
+    employees_count = len(daily_report.employee_reports)
     reply = (
-        f"✅ Отчет за {format_date(report_date)} успешно импортирован.\n\n"
-        f"Выручка (Вообщем): {format_money(total_revenue)}\n"
-        f"Онлайн продажи: {format_money(online_sales)}\n"
-        f"Конверсия: {format_percent(conversion)}\n"
+        f"✅ Отчет за {format_date(daily_report.report_date)} успешно импортирован.\n\n"
+        f"Выручка (Вообщем): {format_money(daily_report.total_revenue)}\n"
+        f"Онлайн продажи: {format_money(daily_report.online_sales)}\n"
+        f"Конверсия: {format_percent(daily_report.conversion)}\n"
         f"Сотрудников в смене: {employees_count}"
     )
     await message.answer(reply)
+
+    if comparison_text:
+        await message.answer(comparison_text)
+
+    if notification_lines:
+        await message.answer("\n".join(notification_lines))
 
 
 @router.message(ImportStates.waiting_for_text)
