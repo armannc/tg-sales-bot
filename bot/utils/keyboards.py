@@ -3,8 +3,13 @@ Inline-клавиатуры бота.
 """
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -37,6 +42,8 @@ def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="menu:root"))
     return builder.as_markup()
+
+
 def employee_menu_keyboard() -> InlineKeyboardMarkup:
     """Меню для обычного сотрудника — только его личные данные."""
     builder = InlineKeyboardBuilder()
@@ -50,3 +57,10 @@ def employee_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help"),
     )
     return builder.as_markup()
+
+
+def persistent_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Закрепленная кнопка вызова меню (всегда видна вместо клавиатуры телефона)."""
+    builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text="📋 Меню"))
+    return builder.as_markup(resize_keyboard=True)

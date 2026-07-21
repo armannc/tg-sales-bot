@@ -12,7 +12,12 @@ from bot.database.engine import async_session_factory
 from bot.handlers.states import ImportStates
 from bot.services.invite_service import use_invite_code, InviteError
 from bot.utils.access import is_admin
-from bot.utils.keyboards import back_to_menu_keyboard, main_menu_keyboard, employee_menu_keyboard
+from bot.utils.keyboards import (
+    back_to_menu_keyboard,
+    main_menu_keyboard,
+    employee_menu_keyboard,
+    persistent_menu_keyboard,
+)
 
 router = Router(name="common")
 
@@ -70,7 +75,10 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
                 await message.answer(f"⚠️ {e}")
 
     await message.answer(
-        "Привет! Я бот для учета продаж сотрудников магазина.\n\n"
+        "Привет! Я бот для учета продаж сотрудников магазина.",
+        reply_markup=persistent_menu_keyboard(),
+    )
+    await message.answer(
         "Выберите действие ниже или отправьте /help, чтобы увидеть список команд.",
         reply_markup=_menu_for(message.from_user.id),
     )
@@ -83,6 +91,11 @@ async def cmd_help(message: Message) -> None:
 
 @router.message(Command("menu"))
 async def cmd_menu(message: Message) -> None:
+    await message.answer("Главное меню:", reply_markup=_menu_for(message.from_user.id))
+
+
+@router.message(F.text == "📋 Меню")
+async def reply_menu_button(message: Message) -> None:
     await message.answer("Главное меню:", reply_markup=_menu_for(message.from_user.id))
 
 
