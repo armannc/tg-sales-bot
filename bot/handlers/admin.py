@@ -41,7 +41,7 @@ def _parse_role(raw: str) -> RoleEnum:
         return RoleEnum(raw)
     except ValueError as exc:
         raise EmployeeServiceError(
-            f"Неизвестная роль {raw!r}. Допустимые значения: consultant, online."
+            f"Неизвестная роль {raw!r}. Допустимые значения: consultant, online, intern."
         ) from exc
 
 
@@ -61,7 +61,7 @@ async def cmd_add_employee(message: Message, command: CommandObject, state: FSMC
         parts = command.args.split()
         if len(parts) != 3:
             await message.answer(
-                "Использование: /add_employee Имя consultant|online план\n"
+                "Использование: /add_employee Имя consultant|online|intern план\n"
                 "Например: /add_employee Иван consultant 483000"
             )
             return
@@ -91,7 +91,7 @@ async def cmd_add_employee(message: Message, command: CommandObject, state: FSMC
 async def add_employee_name(message: Message, state: FSMContext) -> None:
     await state.update_data(name=message.text.strip())
     await state.set_state(AddEmployeeStates.waiting_for_role)
-    await message.answer("Введите роль сотрудника: consultant или online")
+    await message.answer("Введите роль сотрудника: consultant, online или intern")
 
 
 @router.message(AddEmployeeStates.waiting_for_role, F.text)
@@ -99,7 +99,7 @@ async def add_employee_role(message: Message, state: FSMContext) -> None:
     try:
         role = _parse_role(message.text)
     except EmployeeServiceError as exc:
-        await message.answer(f"❌ {exc}\nПопробуйте еще раз: consultant или online")
+        await message.answer(f"❌ {exc}\nПопробуйте еще раз: consultant, online или intern")
         return
 
     await state.update_data(role=role.value)
@@ -156,7 +156,7 @@ async def cmd_set_role(message: Message, command: CommandObject) -> None:
         return
 
     if not command.args or len(command.args.split()) != 2:
-        await message.answer("Использование: /set_role Имя consultant|online")
+        await message.answer("Использование: /set_role Имя consultant|online|intern")
         return
 
     name, role_raw = command.args.split()
@@ -186,6 +186,7 @@ async def cmd_set_plan(message: Message, command: CommandObject) -> None:
             "Использование:\n"
             "/set_plan consultant 483000  — план для всей роли\n"
             "/set_plan online 250000  — план для всей роли\n"
+            "/set_plan intern 483000  — план для всей роли\n"
             "/set_plan Иван 500000  — план для конкретного сотрудника"
         )
         return
@@ -198,7 +199,11 @@ async def cmd_set_plan(message: Message, command: CommandObject) -> None:
         return
 
     async with async_session_factory() as session:
-        if target.lower() in (RoleEnum.consultant.value, RoleEnum.online.value):
+        if target.lower() in (
+            RoleEnum.consultant.value,
+            RoleEnum.online.value,
+            RoleEnum.intern.value,
+        ):
             role = RoleEnum(target.lower())
             updated_count = await set_plan_for_role(session, role, plan)
             await message.answer(
@@ -226,9 +231,12 @@ async def cmd_set_salary(message: Message, command: CommandObject) -> None:
             "Использование:\n"
             "/set_salary Имя оклад_за_смену — для конкретного сотрудника\n"
             "/set_salary consultant оклад_за_смену — для всей роли\n"
-            "/set_salary online оклад_за_смену — для всей роли\n\n"
+            "/set_salary online оклад_за_смену — для всей роли\n"
+            "/set_salary intern оклад_за_смену — для всей роли\n\n"
             "Например: /set_salary Алина 6666\n"
             "(6666 тг начисляется за каждую отработанную смену)\n\n"
+            "Для роли intern (стажер) оклад и % от продаж автоматически "
+            "уменьшаются вдвое — указывайте полный оклад, как для обычного сотрудника.\n\n"
             "Процент от продаж задавать не нужно — он считается автоматически "
             "по проценту выполнения плана за период:\n"
             "≤80% плана → 1%, 81-90% → 2%, 91-109% → 3%, ≥110% → 4%."
@@ -243,7 +251,11 @@ async def cmd_set_salary(message: Message, command: CommandObject) -> None:
         return
 
     async with async_session_factory() as session:
-        if target.lower() in (RoleEnum.consultant.value, RoleEnum.online.value):
+        if target.lower() in (
+            RoleEnum.consultant.value,
+            RoleEnum.online.value,
+            RoleEnum.intern.value,
+        ):
             role = RoleEnum(target.lower())
             updated_count = await set_salary_for_role(session, role, base_salary)
             await message.answer(

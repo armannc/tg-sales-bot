@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from bot.database.models import DailyReport, Employee, EmployeeReport
+from bot.database.models import DailyReport, Employee, EmployeeReport, RoleEnum
 from bot.services.salary_tiers import get_sales_percent_by_plan
 
 
@@ -138,11 +138,18 @@ async def calculate_salary(
     автоматически по шкале выполнения плана (см.
     bot/services/salary_tiers.py). Премии/бонусы из отчетов (строка
     "Бонус") в расчет не входят — это отдельная выплата.
+
+    Для сотрудников с ролью intern (стажер, полставки) оклад за смену
+    и процент от продаж уменьшаются вдвое относительно обычной ставки.
     """
     stats = await get_employee_stats(session, employee, date_from, date_to)
     sales_percent = get_sales_percent_by_plan(stats.percent)
+
+    intern_multiplier = 0.5 if employee.role == RoleEnum.intern else 1.0
+    sales_percent *= intern_multiplier
+
     sales_bonus = stats.total_sales * sales_percent / 100
-    base_salary_total = employee.base_salary * stats.shifts
+    base_salary_total = employee.base_salary * stats.shifts * intern_multiplier
     total_salary = base_salary_total + sales_bonus
 
     return SalaryResult(
@@ -151,7 +158,7 @@ async def calculate_salary(
         date_to=date_to,
         total_sales=stats.total_sales,
         shifts=stats.shifts,
-        shift_rate=employee.base_salary,
+        shift_rate=employee.base_salary * intern_multiplier,
         base_salary_total=base_salary_total,
         plan_percent=stats.percent,
         sales_percent=sales_percent,

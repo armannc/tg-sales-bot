@@ -30,6 +30,7 @@ class Base(DeclarativeBase):
 class RoleEnum(str, enum.Enum):
     consultant = "consultant"
     online = "online"
+    intern = "intern"
 
 
 class Employee(Base):
