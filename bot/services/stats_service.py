@@ -28,6 +28,27 @@ class EmployeeStats:
 def _percent(sales: float, plan: float) -> float:
     return (sales / plan * 100) if plan > 0 else 0.0
 
+import calendar
+
+async def get_biweekly_period(today: dt.date | None = None) -> tuple[dt.date, dt.date]:
+    """Возвращает (начало, конец) текущего периода выплаты зарплаты.
+
+    Зарплата выдается дважды в месяц: 15-го числа (за период 1-15) и в
+    последний день месяца (за период 16-конец месяца). Функция сама
+    определяет, в каком из двух периодов находится `today`.
+    """
+    if today is None:
+        today = dt.date.today()
+
+    if today.day <= 15:
+        start = today.replace(day=1)
+        end = today.replace(day=15)
+    else:
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        start = today.replace(day=16)
+        end = today.replace(day=last_day)
+
+    return start, end
 
 async def get_period_bounds(period: str) -> tuple[dt.date, dt.date]:
     """Возвращает (начало, конец) периода: 'day' | 'month' | 'year'."""

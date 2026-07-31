@@ -14,7 +14,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.database.engine import async_session_factory
 from bot.database.models import Employee
 from bot.services.employee_service import get_employee_by_telegram_id
-from bot.services.stats_service import calculate_salary, get_employee_stats, get_period_bounds
+from bot.services.stats_service import calculate_salary, get_biweekly_period, get_employee_stats
 from bot.utils.dates import DateParseError, parse_date_arg
 from bot.utils.formatting import format_date, format_money, format_percent
 from bot.utils.keyboards import back_to_menu_keyboard
@@ -67,12 +67,12 @@ async def cmd_me(message: Message) -> None:
         return
 
     async with async_session_factory() as session:
-        date_from, date_to = await get_period_bounds("month")
+        date_from, date_to = await get_biweekly_period()
         stats = await get_employee_stats(session, employee, date_from, date_to)
 
     reply = (
         f"👋 <b>{employee.name}</b> ({employee.role.value})\n\n"
-        f"Статистика за текущий месяц:\n"
+        f"Статистика за текущий период выплаты ({format_date(date_from)} — {format_date(date_to)}):\n"
         f"Смен: {stats.shifts}, продажи: {format_money(stats.total_sales)}, "
         f"выполнение плана: {format_percent(stats.percent)}"
     )
@@ -99,10 +99,21 @@ async def cmd_my_salary(message: Message, command: CommandObject) -> None:
         await message.answer(NOT_LINKED_TEXT)
         return
 
-    if not command.args or len(command.args.split()) != 2:
+    # Без аргументов - показываем текущий период выплаты (1-15 либо 16-конец месяца)
+    if not command.args:
+        async with async_session_factory() as session:
+            date_from, date_to = await get_biweekly_period()
+            result = await calculate_salary(session, employee, date_from, date_to)
+
+        await message.answer(_format_salary_reply(employee, result, date_from, date_to))
+        return
+
+    if len(command.args.split()) != 2:
         await message.answer(
-            "Использование: /my_salary ДД.ММ.ГГГГ ДД.ММ.ГГГГ\n"
-            "Например: /my_salary 01.07.2026 31.07.2026"
+            "Использование:\n"
+            "/my_salary — зарплата за текущий период выплаты (1-15 или 16-конец месяца)\n"
+            "/my_salary ДД.ММ.ГГГГ ДД.ММ.ГГГГ — за произвольный период\n\n"
+            "Например: /my_salary 01.07.2026 15.07.2026"
         )
         return
 
@@ -145,7 +156,7 @@ async def cb_me_stats(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "me:salary_month")
-async def cb_me_salary_month(callback: CallbackQuery) -> None:
+async def cb_me_salary_period(callback: CallbackQuery) -> None:
     employee = await _get_own_employee_or_none(callback.from_user.id)
     if employee is None:
         await callback.message.edit_text(NOT_LINKED_TEXT)
@@ -153,7 +164,7 @@ async def cb_me_salary_month(callback: CallbackQuery) -> None:
         return
 
     async with async_session_factory() as session:
-        date_from, date_to = await get_period_bounds("month")
+        date_from, date_to = await get_biweekly_period()
         result = await calculate_salary(session, employee, date_from, date_to)
 
     await callback.message.edit_text(

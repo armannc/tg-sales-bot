@@ -12,7 +12,12 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.database.engine import async_session_factory
 from bot.services.employee_service import get_employee_by_name
-from bot.services.stats_service import SalaryResult, calculate_salary, calculate_salary_for_all
+from bot.services.stats_service import (
+    SalaryResult,
+    calculate_salary,
+    calculate_salary_for_all,
+    get_biweekly_period,
+)
 from bot.utils.dates import DateParseError, parse_date_arg
 from bot.utils.formatting import format_date, format_money
 from bot.utils.keyboards import back_to_menu_keyboard
@@ -25,11 +30,14 @@ SALARY_USAGE = (
     "Процент от продаж определяется автоматически по проценту выполнения "
     "плана за период:\n"
     "≤80% → 1%, 81-90% → 2%, 91-109% → 3%, ≥110% → 4%.\n"
+    "Для роли intern оклад и % от продаж уменьшены вдвое.\n"
     "Премии из отчетов сюда не входят — считаются отдельно.\n\n"
     "<b>Использование:</b>\n"
-    "/salary Имя ДД.ММ.ГГГГ ДД.ММ.ГГГГ — зарплата одного сотрудника\n"
-    "/salary_all ДД.ММ.ГГГГ ДД.ММ.ГГГГ — зарплата всех сотрудников\n\n"
-    "Например: /salary Алина 01.07.2026 31.07.2026\n\n"
+    "/salary Имя — за текущий период выплаты (1-15 или 16-конец месяца)\n"
+    "/salary Имя ДД.ММ.ГГГГ ДД.ММ.ГГГГ — за произвольный период\n"
+    "/salary_all — зарплата всех за текущий период выплаты\n"
+    "/salary_all ДД.ММ.ГГГГ ДД.ММ.ГГГГ — зарплата всех за произвольный период\n\n"
+    "Например: /salary Алина 01.07.2026 15.07.2026\n\n"
     "Оклад за смену задает администратор командой /set_salary."
 )
 
@@ -54,6 +62,28 @@ async def cmd_salary(message: Message, command: CommandObject) -> None:
         return
 
     parts = command.args.split()
+
+    # Только имя - берем текущий период выплаты (1-15 или 16-конец месяца)
+    if len(parts) == 1:
+        name = parts[0]
+        date_from, date_to = await get_biweekly_period()
+
+        async with async_session_factory() as session:
+            employee = await get_employee_by_name(session, name)
+            if employee is None:
+                await message.answer(f"Сотрудник {name!r} не найден.")
+                return
+            result = await calculate_salary(session, employee, date_from, date_to)
+
+        reply = (
+            f"💰 <b>Зарплата: {employee.name}</b>\n"
+            f"Текущий период выплаты: {format_date(date_from)} — {format_date(date_to)}\n\n"
+            f"{_format_salary_block(result)}\n\n"
+            f"<i>Премии/бонусы из отчетов сюда не входят.</i>"
+        )
+        await message.answer(reply)
+        return
+
     if len(parts) != 3:
         await message.answer(SALARY_USAGE)
         return
@@ -87,23 +117,30 @@ async def cmd_salary(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("salary_all"))
 async def cmd_salary_all(message: Message, command: CommandObject) -> None:
-    if not command.args or len(command.args.split()) != 2:
-        await message.answer(
-            "Использование: /salary_all ДД.ММ.ГГГГ ДД.ММ.ГГГГ\n"
-            "Например: /salary_all 01.07.2026 31.07.2026"
-        )
-        return
+    # Без аргументов - текущий период выплаты (1-15 или 16-конец месяца)
+    if not command.args:
+        date_from, date_to = await get_biweekly_period()
+    else:
+        parts = command.args.split()
+        if len(parts) != 2:
+            await message.answer(
+                "Использование:\n"
+                "/salary_all — за текущий период выплаты (1-15 или 16-конец месяца)\n"
+                "/salary_all ДД.ММ.ГГГГ ДД.ММ.ГГГГ — за произвольный период\n\n"
+                "Например: /salary_all 01.07.2026 15.07.2026"
+            )
+            return
 
-    date_from_raw, date_to_raw = command.args.split()
-    try:
-        date_from = parse_date_arg(date_from_raw)
-        date_to = parse_date_arg(date_to_raw)
-    except DateParseError as exc:
-        await message.answer(f"❌ {exc}")
-        return
+        date_from_raw, date_to_raw = parts
+        try:
+            date_from = parse_date_arg(date_from_raw)
+            date_to = parse_date_arg(date_to_raw)
+        except DateParseError as exc:
+            await message.answer(f"❌ {exc}")
+            return
 
-    if date_from > date_to:
-        date_from, date_to = date_to, date_from
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
 
     async with async_session_factory() as session:
         results = await calculate_salary_for_all(session, date_from, date_to)
