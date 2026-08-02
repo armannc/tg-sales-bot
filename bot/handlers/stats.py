@@ -1,5 +1,5 @@
 """
-Статистика и рейтинг сотрудников: /stats, /employee, /day, /month, /year, /top, /export.
+Статистика и рейтинг сотрудников: /stats, /employee, /day, /month, /year, /period, /top, /export.
 """
 from __future__ import annotations
 
@@ -13,11 +13,12 @@ from bot.services.export_service import export_stats_to_excel
 from bot.services.stats_service import (
     EmployeeStats,
     get_all_employee_stats,
+    get_biweekly_period,
     get_employee_stats,
     get_period_bounds,
     get_top_employees,
 )
-from bot.utils.formatting import format_money
+from bot.utils.formatting import format_date, format_money
 from bot.utils.keyboards import back_to_menu_keyboard
 
 router = Router(name="stats")
@@ -53,6 +54,24 @@ async def _build_period_text(period: str, title: str) -> str:
 
     if not all_stats:
         return f"{title}: нет данных."
+
+    all_stats.sort(key=lambda s: s.percent, reverse=True)
+    blocks = [_format_employee_block(s, i + 1) for i, s in enumerate(all_stats)]
+    return f"{title}\n\n" + "\n\n".join(blocks)
+
+
+async def _build_biweekly_text() -> str:
+    """Рейтинг по всем сотрудникам за текущий период выплаты (1-15 или
+    16-конец месяца) - тот же период, что используют /salary_all и
+    /my_salary у сотрудников."""
+    date_from, date_to = await get_biweekly_period()
+    title = f"💵 <b>Статистика за текущий период выплаты</b>\n{format_date(date_from)} — {format_date(date_to)}"
+
+    async with async_session_factory() as session:
+        all_stats = await get_all_employee_stats(session, date_from, date_to)
+
+    if not all_stats:
+        return f"{title}\n\nНет данных за этот период."
 
     all_stats.sort(key=lambda s: s.percent, reverse=True)
     blocks = [_format_employee_block(s, i + 1) for i, s in enumerate(all_stats)]
@@ -109,6 +128,13 @@ async def cmd_year(message: Message) -> None:
     await message.answer(await _build_period_text("year", "📈 <b>Статистика за текущий год</b>"))
 
 
+@router.message(Command("period"))
+async def cmd_period(message: Message) -> None:
+    """Статистика по всем сотрудникам за текущий период выплаты зарплаты
+    (1-15 или 16-конец месяца)."""
+    await message.answer(await _build_biweekly_text())
+
+
 @router.message(Command("top"))
 async def cmd_top(message: Message, command: CommandObject) -> None:
     limit = 5
@@ -158,9 +184,9 @@ async def cb_menu_day(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:month")
-async def cb_menu_month(callback: CallbackQuery) -> None:
-    text = await _build_period_text("month", "🗓 <b>Статистика за текущий месяц</b>")
+@router.callback_query(F.data == "menu:period")
+async def cb_menu_period(callback: CallbackQuery) -> None:
+    text = await _build_biweekly_text()
     await callback.message.edit_text(text, reply_markup=back_to_menu_keyboard())
     await callback.answer()
 

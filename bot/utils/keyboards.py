@@ -21,7 +21,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="📅 За сегодня", callback_data="menu:day"),
-        InlineKeyboardButton(text="🗓 За месяц", callback_data="menu:month"),
+        InlineKeyboardButton(text="💵 За период", callback_data="menu:period"),
     )
     builder.row(
         InlineKeyboardButton(text="📈 За год", callback_data="menu:year"),
@@ -51,7 +51,7 @@ def employee_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📊 Моя статистика", callback_data="me:stats"),
     )
     builder.row(
-        InlineKeyboardButton(text="💰 Моя зарплата за месяц", callback_data="me:salary_month"),
+        InlineKeyboardButton(text="💰 Моя зарплата за период", callback_data="me:salary_month"),
     )
     builder.row(
         InlineKeyboardButton(text="❓ Помощь", callback_data="menu:help"),

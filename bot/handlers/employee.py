@@ -32,15 +32,35 @@ async def _get_own_employee_or_none(telegram_id: int) -> Employee | None:
         return await get_employee_by_telegram_id(session, telegram_id)
 
 
-def _format_stats_reply(employee: Employee, stats) -> str:
+def _format_stats_block(title: str, stats) -> str:
     return (
-        f"📊 <b>Моя статистика: {employee.name}</b>\n\n"
+        f"<b>{title}</b>\n"
         f"Смен отработано: {stats.shifts}\n"
-        f"Продажи всего: {format_money(stats.total_sales)}\n"
+        f"Продажи: {format_money(stats.total_sales)}\n"
         f"План: {format_money(stats.plan)}\n"
         f"Выполнение: {format_percent(stats.percent)}\n"
         f"Средняя касса: {format_money(stats.avg_kassa)}\n"
         f"Бонусы (из отчетов): {format_money(stats.total_bonus)}"
+    )
+
+
+async def _build_full_stats_reply(session, employee: Employee) -> str:
+    """Собирает сообщение с двумя срезами статистики: за текущий период
+    выплаты (1-15 или 16-конец месяца) и за все время."""
+    period_from, period_to = await get_biweekly_period()
+    period_stats = await get_employee_stats(session, employee, period_from, period_to)
+    all_time_stats = await get_employee_stats(session, employee)
+
+    period_block = _format_stats_block(
+        f"📅 Текущий период выплаты ({format_date(period_from)} — {format_date(period_to)})",
+        period_stats,
+    )
+    all_time_block = _format_stats_block("📊 За все время", all_time_stats)
+
+    return (
+        f"👤 <b>Моя статистика: {employee.name}</b>\n\n"
+        f"{period_block}\n\n"
+        f"{all_time_block}"
     )
 
 
@@ -87,9 +107,9 @@ async def cmd_my_stats(message: Message) -> None:
         return
 
     async with async_session_factory() as session:
-        stats = await get_employee_stats(session, employee)
+        reply = await _build_full_stats_reply(session, employee)
 
-    await message.answer(_format_stats_reply(employee, stats))
+    await message.answer(reply)
 
 
 @router.message(Command("my_salary"))
@@ -147,11 +167,9 @@ async def cb_me_stats(callback: CallbackQuery) -> None:
         return
 
     async with async_session_factory() as session:
-        stats = await get_employee_stats(session, employee)
+        reply = await _build_full_stats_reply(session, employee)
 
-    await callback.message.edit_text(
-        _format_stats_reply(employee, stats), reply_markup=back_to_menu_keyboard()
-    )
+    await callback.message.edit_text(reply, reply_markup=back_to_menu_keyboard())
     await callback.answer()
 
 
